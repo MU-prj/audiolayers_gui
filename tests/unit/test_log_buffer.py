@@ -73,3 +73,13 @@ class TestSince:
         for t in threads:
             t.join()
         assert log.since(0)["next"] == 1000
+
+    def test_lettura_incrementale_dopo_lo_scarto(self):
+        """Chi aveva letto fino a next=2 riprende senza duplicati né buchi
+        anche se nel frattempo il buffer ha scartato righe vecchie."""
+        log = LogBuffer(max_lines=2)
+        for parola in ("a", "b", "c", "d"):
+            log.add(parola)
+        dopo = log.since(2)
+        assert [line for _, line in dopo["lines"]] == ["c", "d"]
+        assert dopo["next"] == 4
