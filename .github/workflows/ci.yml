@@ -1,0 +1,87 @@
+name: CI
+
+# Esegue l'INTERA suite della GUI (unit + integration + e2e) a ogni push e
+# pull request, su Python 3.11 e 3.12.
+#
+# La GUI dipende dal motore `audiolayers`, che NON è (ancora) un pacchetto
+# pip: usa un layout `src/` e internamente si importa come `src.*`, mentre
+# la GUI lo importa come `audiolayers.*`. Il job clona il motore, installa
+# le sue dipendenze (numpy/soundfile/soxr/scipy/flask/PyYAML + archivedigger)
+# e riconcilia i due nomi con un symlink `audiolayers -> engine/src`, tenendo
+# la root del motore su PYTHONPATH per gli import interni `src.*`. Nessuna
+# modifica al repo del motore.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    env:
+      # Il motore (e la sua dipendenza archivedigger) vivono nella stessa
+      # org. Se i repo sono pubblici non serve nulla; se sono privati,
+      # imposta il secret GH_PAT (un PAT con scope repo): verrà usato per i
+      # clone git. Il GITHUB_TOKEN di default vede solo questo repo.
+      GH_PAT: ${{ secrets.GH_PAT }}
+      # Ref del motore da cui la GUI dipende (requirements.txt lo pinna a main).
+      ENGINE_REF: main
+
+    steps:
+      - name: Checkout GUI
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Installa libsndfile (backend di soundfile)
+        run: sudo apt-get update && sudo apt-get install -y libsndfile1
+
+      - name: Autenticazione git per dipendenze private (opzionale)
+        if: ${{ env.GH_PAT != '' }}
+        run: |
+          git config --global \
+            url."https://x-access-token:${GH_PAT}@github.com/".insteadOf \
+            "https://github.com/"
+
+      - name: Clona il motore audiolayers
+        run: |
+          git clone --depth 1 --branch "$ENGINE_REF" \
+            https://github.com/MU-prj/audiolayers "$HOME/engine"
+
+      - name: Installa le dipendenze
+        run: |
+          python -m pip install --upgrade pip
+          # requirements del motore: tutte le runtime + archivedigger + pytest.
+          pip install -r "$HOME/engine/requirements.txt"
+          pip install pytest-cov
+
+      - name: Shim import — «audiolayers» = engine/src
+        run: |
+          mkdir -p "$HOME/shim"
+          ln -sfn "$HOME/engine/src" "$HOME/shim/audiolayers"
+
+      - name: Suite completa (unit + integration + e2e) con coverage
+        run: |
+          # shim -> import `audiolayers.*`; engine root -> import interni `src.*`.
+          # Gli e2e ereditano PYTHONPATH nel subprocess del server reale.
+          export PYTHONPATH="$HOME/shim:$HOME/engine"
+          python -m pytest \
+            --cov=audiolayers_gui --cov-branch \
+            --cov-report=term-missing --cov-report=xml
+
+      - name: Archivia il report di coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: coverage.xml
+          if-no-files-found: ignore

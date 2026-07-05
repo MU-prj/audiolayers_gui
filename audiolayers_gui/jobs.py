@@ -40,5 +40,8 @@ class JobManager:
             return {"state": job["state"], "detail": job["detail"]}
 
     def result(self, job_id: str):
+        """Il wav prodotto, o None se il job è sconosciuto, ancora in
+        corso o fallito (in tutti questi casi non c'è nulla da scaricare)."""
         with self._lock:
-            return self._jobs[job_id]["result"]
+            job = self._jobs.get(job_id)
+            return job["result"] if job else None

@@ -221,6 +221,22 @@ class TestContorniApi:
         client = create_app(output_dir=tmp_path / "out").test_client()
         assert client.get("/api/jobs/boh").get_json()["state"] == "unknown"
 
+    def test_audio_di_un_job_sconosciuto_e_404_non_500(self, tmp_path):
+        """L'endpoint audio non deve schiantarsi su un id inesistente:
+        404 pulito, coerente con lo stato «unknown»."""
+        client = create_app(output_dir=tmp_path / "out").test_client()
+        assert client.get("/api/jobs/boh/audio").status_code == 404
+
+    def test_audio_di_un_job_fallito_e_404(self, tmp_path):
+        """Un render fallito non ha wav da scaricare: 404, non un 500 con
+        traceback (il job esiste ma result è None)."""
+        client = create_app(output_dir=tmp_path / "out").test_client()
+        job_id = client.post("/api/render",
+                             json={"state": make_state(tmp_path / "vuoto")}
+                             ).get_json()["job_id"]
+        assert wait_done(client, job_id)["state"] == "error"
+        assert client.get(f"/api/jobs/{job_id}/audio").status_code == 404
+
     def test_gli_asset_statici_sono_serviti(self, tmp_path):
         client = create_app(output_dir=tmp_path / "out").test_client()
         assert client.get("/static/app.js").status_code == 200

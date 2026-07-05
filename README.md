@@ -66,7 +66,18 @@ make e2e            # il server reale via subprocess, HTTP sul filo
 I test integration usano il motore vero su partiture minuscole e un
 client Internet Archive finto (`tests/helpers.py`): girano offline.
 Gli e2e avviano `python -m audiolayers_gui` su una porta libera e
-coprono il flusso completo render → polling → download.
+coprono il flusso completo render → polling → download e il percorso
+d'errore (pool vuoto → job in errore, audio 404).
+
+### CI
+
+`.github/workflows/ci.yml` esegue l'intera suite (unit + integration +
+e2e) a ogni push e pull request, su Python 3.11 e 3.12, con report di
+coverage a branch. Il motore non è un pacchetto pip (layout `src/`,
+import interni `src.*`): la CI lo clona, ne installa le dipendenze e lo
+espone come `audiolayers` con un symlink `audiolayers -> engine/src`,
+tenendo la root del motore su `PYTHONPATH` per gli import `src.*`. Per
+motore o archivedigger privati basta impostare il secret `GH_PAT`.
 
 ## Licenza
 

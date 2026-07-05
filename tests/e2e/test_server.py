@@ -2,8 +2,9 @@
 
 Come per la CLI del motore, qui niente test client: si avvia il processo
 reale su una porta libera e si parla HTTP con la stdlib. Copre l'avvio
-(`--port` rispettato), il flusso completo render → polling → download e
-il round trip YAML sul filo.
+(`--port` rispettato), il flusso completo render → polling → download, il
+percorso d'errore (pool vuoto → job in «error», audio 404) e il round
+trip YAML sul filo.
 """
 
 import json
@@ -11,6 +12,7 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -101,6 +103,33 @@ class TestServerReale:
         log = get_json(server + "/api/log")
         testo = "\n".join(riga for _, riga in log["lines"])
         assert "render: completato" in testo
+
+    def test_render_fallito_arriva_come_errore_sul_filo(self, server, tmp_path):
+        """Il percorso d'errore end-to-end: pool vuoto -> il job reale va
+        in «error» e il terminale riporta l'ERRORE, tutto via HTTP."""
+        payload = json.dumps({"state": make_state(tmp_path / "vuoto")}).encode()
+        job = json.loads(post(server + "/api/render", payload,
+                              "application/json"))
+
+        scadenza = time.time() + 60
+        while time.time() < scadenza:
+            stato = get_json(f"{server}/api/jobs/{job['job_id']}")
+            if stato["state"] in ("done", "error"):
+                break
+            time.sleep(0.2)
+        assert stato["state"] == "error", stato
+
+        # niente wav da scaricare: 404 pulito, non un 500
+        try:
+            urllib.request.urlopen(
+                f"{server}/api/jobs/{job['job_id']}/audio", timeout=10)
+            raise AssertionError("l'audio di un job fallito non doveva esistere")
+        except urllib.error.HTTPError as err:
+            assert err.code == 404
+
+        log = get_json(server + "/api/log")
+        testo = "\n".join(riga for _, riga in log["lines"])
+        assert "ERRORE" in testo
 
     def test_yaml_round_trip_sul_filo(self, server, tmp_path):
         state = make_state(tmp_path / "pool")
