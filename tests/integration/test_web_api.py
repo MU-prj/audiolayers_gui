@@ -9,21 +9,7 @@ import time
 import yaml
 
 from audiolayers_gui.app import create_app
-from tests.helpers import FakeArchiveClient, write_wav
-
-
-def make_state(pool, duration=1.0):
-    return {
-        "global": {"seed": {"enabled": True, "value": 7}},
-        "layers": [{
-            "layer_id": "uno",
-            "pool": str(pool),
-            "params": {
-                "duration": {"enabled": True, "value": duration},
-                "fragment.duration": {"enabled": True, "value": 0.25},
-            },
-        }],
-    }
+from tests.helpers import FakeArchiveClient, make_state, write_wav
 
 
 def wait_done(client, job_id, timeout=30.0):
@@ -136,3 +122,145 @@ class TestWebApi:
         response = app.test_client().get("/")
         assert response.status_code == 200
         assert b"audiolayers" in response.data.lower()
+
+
+class TestContrattoRender:
+    def test_la_partitura_viene_scritta_nella_cartella_output(self, tmp_path):
+        """Il render passa dal file: score.yaml è ispezionabile a mano."""
+        pool = tmp_path / "pool"
+        pool.mkdir()
+        write_wav(pool / "a.wav", 1.0)
+        out = tmp_path / "out"
+        app = create_app(output_dir=out)
+        client = app.test_client()
+        job_id = client.post("/api/render",
+                             json={"state": make_state(pool)}).get_json()["job_id"]
+        wait_done(client, job_id)
+
+        score = yaml.safe_load((out / "score.yaml").read_text(encoding="utf-8"))
+        assert score["seed"] == 7
+        assert score["layers"][0]["fragment"]["duration"] == 0.25
+
+    def test_il_wav_prodotto_e_leggibile_stereo_48k(self, tmp_path):
+        import io
+
+        import soundfile as sf
+
+        pool = tmp_path / "pool"
+        pool.mkdir()
+        write_wav(pool / "a.wav", 1.0)
+        client = create_app(output_dir=tmp_path / "out").test_client()
+        job_id = client.post("/api/render",
+                             json={"state": make_state(pool)}).get_json()["job_id"]
+        assert wait_done(client, job_id)["state"] == "done"
+
+        audio = client.get(f"/api/jobs/{job_id}/audio")
+        data, sample_rate = sf.read(io.BytesIO(audio.data))
+        assert sample_rate == 48000          # default del motore
+        assert data.ndim == 2 and data.shape[1] == 2
+        assert 0.9 <= len(data) / sample_rate <= 2.5   # ~durata del layer
+
+    def test_render_multilayer(self, tmp_path):
+        pool = tmp_path / "pool"
+        pool.mkdir()
+        write_wav(pool / "a.wav", 1.0)
+        state = make_state(pool)
+        secondo = {"layer_id": "due", "pool": str(pool), "params": {
+            "duration": {"enabled": True, "value": 0.5},
+            "fragment.duration": {"enabled": True, "value": 0.25},
+        }}
+        state["layers"].append(secondo)
+        client = create_app(output_dir=tmp_path / "out").test_client()
+        job_id = client.post("/api/render",
+                             json={"state": state}).get_json()["job_id"]
+        assert wait_done(client, job_id)["state"] == "done"
+        assert client.get(f"/api/jobs/{job_id}/audio").data[:4] == b"RIFF"
+
+    def test_due_render_in_sequenza_hanno_job_distinti(self, tmp_path):
+        pool = tmp_path / "pool"
+        pool.mkdir()
+        write_wav(pool / "a.wav", 1.0)
+        client = create_app(output_dir=tmp_path / "out").test_client()
+        primo = client.post("/api/render",
+                            json={"state": make_state(pool)}).get_json()["job_id"]
+        secondo = client.post("/api/render",
+                              json={"state": make_state(pool)}).get_json()["job_id"]
+        assert primo != secondo
+        assert wait_done(client, primo)["state"] == "done"
+        assert wait_done(client, secondo)["state"] == "done"
+        assert client.get(f"/api/jobs/{secondo}/audio").status_code == 200
+
+
+class TestTerminale:
+    def test_il_dig_scrive_le_sue_fasi_nel_terminale(self, tmp_path):
+        pool = tmp_path / "pool"
+        client = create_app(output_dir=tmp_path / "out",
+                            archive_client=FakeArchiveClient()).test_client()
+        job_id = client.post("/api/render",
+                             json={"state": make_state(pool), "dig": True}
+                             ).get_json()["job_id"]
+        wait_done(client, job_id)
+        text = "\n".join(line for _, line in
+                         client.get("/api/log").get_json()["lines"])
+        assert "dig: analisi partitura" in text
+        assert "dig: completato" in text
+
+    def test_l_errore_del_render_finisce_nel_terminale(self, tmp_path):
+        client = create_app(output_dir=tmp_path / "out").test_client()
+        job_id = client.post("/api/render",
+                             json={"state": make_state(tmp_path / "vuoto")}
+                             ).get_json()["job_id"]
+        assert wait_done(client, job_id)["state"] == "error"
+        text = "\n".join(line for _, line in
+                         client.get("/api/log").get_json()["lines"])
+        assert "ERRORE" in text
+
+
+class TestContorniApi:
+    def test_job_sconosciuto_via_api(self, tmp_path):
+        client = create_app(output_dir=tmp_path / "out").test_client()
+        assert client.get("/api/jobs/boh").get_json()["state"] == "unknown"
+
+    def test_gli_asset_statici_sono_serviti(self, tmp_path):
+        client = create_app(output_dir=tmp_path / "out").test_client()
+        assert client.get("/static/app.js").status_code == 200
+        assert client.get("/static/style.css").status_code == 200
+
+    def test_yaml_rotto_in_import_non_ammazza_il_server(self, tmp_path):
+        client = create_app(output_dir=tmp_path / "out").test_client()
+        risposta = client.post("/api/import", data="a: [1, 2",
+                               content_type="text/yaml")
+        assert risposta.status_code == 500
+        assert client.get("/api/params").status_code == 200   # il server vive
+
+
+class TestContrattoCatalogo:
+    """Ciò su cui la GUI conta per generarsi da /api/params."""
+
+    def test_ogni_voce_ha_i_campi_minimi(self, tmp_path):
+        cat = create_app(output_dir=tmp_path / "out") \
+            .test_client().get("/api/params").get_json()
+        for voci in cat.values():
+            for voce in voci:
+                assert {"path", "label", "kind", "default", "info"} <= set(voce), \
+                    f"voce incompleta: {voce.get('path')}"
+
+    def test_i_range_ui_sono_ordinati_e_sotto_il_tetto(self, tmp_path):
+        cat = create_app(output_dir=tmp_path / "out") \
+            .test_client().get("/api/params").get_json()
+        for voci in cat.values():
+            for voce in voci:
+                if "ui" not in voce:
+                    continue
+                assert voce["ui"]["min"] < voce["ui"]["max"], voce["path"]
+                if "max" in voce:
+                    assert voce["ui"]["max"] <= voce["max"], voce["path"]
+
+    def test_le_select_dichiarano_le_opzioni(self, tmp_path):
+        cat = create_app(output_dir=tmp_path / "out") \
+            .test_client().get("/api/params").get_json()
+        for voci in cat.values():
+            for voce in voci:
+                if voce["kind"] == "select":
+                    assert voce["options"], voce["path"]
+                    assert voce["default"] in voce["options"], voce["path"]

@@ -15,6 +15,21 @@ def write_wav(path, seconds, sample_rate=48000):
     sf.write(str(path), np.zeros(frames, dtype=np.float32), sample_rate)
 
 
+def make_state(pool, duration=1.0):
+    """Stato minimo dei controlli: un layer, un pool, render veloce."""
+    return {
+        "global": {"seed": {"enabled": True, "value": 7}},
+        "layers": [{
+            "layer_id": "uno",
+            "pool": str(pool),
+            "params": {
+                "duration": {"enabled": True, "value": duration},
+                "fragment.duration": {"enabled": True, "value": 0.25},
+            },
+        }],
+    }
+
+
 class FakeArchiveClient:
     """Client Internet Archive finto: cataloghi in memoria, download che
     scrive wav reali. Registra query e max_items ricevuti."""
