@@ -47,6 +47,11 @@ class TestJobManager:
     def test_job_sconosciuto(self):
         assert JobManager().status("boh")["state"] == "unknown"
 
+    def test_il_risultato_di_un_job_sconosciuto_e_none(self):
+        # result() non solleva su id inesistenti: la route audio se ne
+        # serve per rispondere 404 invece di schiantarsi.
+        assert JobManager().result("boh") is None
+
 
 class TestStati:
     def test_job_appena_avviato_e_running(self):
