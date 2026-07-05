@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>audiolayers</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="centercol">
+<header>
+  <h1>audiolayers</h1>
+  <div class="actions">
+    <button id="btn-add-layer">+ layer</button>
+    <button id="btn-export">esporta yaml</button>
+    <label class="filebtn">importa yaml<input type="file" id="file-import" accept=".yaml,.yml"></label>
+    <button id="btn-render" class="primary">render</button>
+    <button id="btn-env" title="pannello inviluppi (sinistra)">inviluppi</button>
+    <button id="btn-daw" title="pannello audio (destra)">daw</button>
+    <button id="btn-theme" title="chiaro/scuro">☀</button>
+  </div>
+</header>
+<div id="subbar">
+  <label class="toggle"><input type="checkbox" id="chk-dig"> download (dig) — popola il pool da Internet Archive prima del render</label>
+  <label class="toggle" style="margin-left:14px"><input type="checkbox" id="chk-digall"> digger globale — un solo blocco per tutta la partitura (i digger dei layer spariscono)</label>
+</div>
+
+<section id="globals" class="panel">
+  <h2>globali</h2>
+  <div id="global-params" class="params"></div>
+  <div id="global-dig"></div>
+</section>
+
+<main id="layers"></main>
+</div>
+
+<aside id="infobox" hidden>
+  <button class="chiudi" title="chiudi">×</button>
+  <h3></h3>
+  <p></p>
+</aside>
+
+<div id="envpanel" hidden>
+  <div id="env-inner">
+    <div id="env-toolbar">
+      <strong>inviluppi</strong>
+      <span style="flex:1"></span>
+      <button id="env-close" class="danger">×</button>
+    </div>
+    <div id="env-scroll"></div>
+  </div>
+  <div id="env-divider" title="trascina per ridimensionare"></div>
+</div>
+
+<div id="daw" hidden>
+  <div id="daw-divider" title="trascina per ridimensionare"></div>
+  <div id="daw-inner">
+    <div id="daw-toolbar">
+      <strong>render</strong>
+      <button id="daw-view" title="forma d'onda / spettrogramma">onda</button>
+      <button id="daw-play">▶</button>
+      <span id="daw-time">0:00.0</span>
+      <span style="flex:1"></span>
+      <button id="daw-close" class="danger">×</button>
+    </div>
+    <div id="daw-scroll">
+      <div id="daw-track">
+        <canvas id="daw-ruler"></canvas>
+        <canvas id="daw-wave"></canvas>
+        <div id="daw-playhead"></div>
+      </div>
+      <p id="daw-empty">nessun render: premi «render» e il risultato appare qui.</p>
+    </div>
+  </div>
+</div>
+
+<div id="terminal">
+  <div id="term-head">terminale <span id="term-arrow">▸</span></div>
+  <pre id="term-body" hidden></pre>
+</div>
+
+<footer id="status-bar">
+  <audio id="player" controls hidden></audio>
+  <a id="btn-download" hidden download="audiolayers.wav">scarica wav</a>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

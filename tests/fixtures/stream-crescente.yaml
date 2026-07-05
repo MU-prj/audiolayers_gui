@@ -1,0 +1,42 @@
+# Stream singolo: frammenti back-to-back, senza silenzi né sovrapposizioni,
+# con durata che cresce linearmente da 1 ms a 1 s lungo i 60 secondi.
+#
+#   render puro (pool già popolato):
+#     python -m audiolayers.main scores/stream-crescente.yaml -o out/stream.wav
+#   con provisioning automatico da Internet Archive:
+#     python -m audiolayers.main scores/stream-crescente.yaml -o out/stream.wav --dig
+sample_rate: 48000
+seed: 20260703
+master_volume: -4.0
+
+layers:
+  - layer_id: "stream"
+    duration: 20.0
+    pool: "audio/pool/"
+    fill_factor: 1.0          # back-to-back: IOI = durata frammento
+    distribution: 0.0         # metronomo: nessun jitter, nessuna sovrapposizione
+    fragment:
+      # Il territorio dei primi 5 s della versione lunga (grani 1-85 ms),
+      # esteso su 20 s, con maschera che varia leggermente ogni grano.
+      duration: [[0, 0.005], [20, 0.06]]
+      duration_range: [[0, 0.004], [20, 0.025]]
+    pointer:
+      start: 0.5
+      start_range: 0.5        # punto di lettura uniforme su tutto il file
+    selection:
+      strategy: sequential
+    volume: 0.0
+    volume_range: 3.0         # respiro dinamico +-3 dB
+    pan: 0.0
+    pan_range: 30.0           # sparpagliamento stereo leggero
+    # Blocco opzionale: usato solo con --dig. Senza flag il pool resta
+    # una normale cartella locale. Campi omessi -> default di provisioning.
+    provision:
+      search:
+        license: cc
+        # Item-level: solo item che contengono file lossless, altrimenti
+        # i top-download CC sono quasi tutti mp3 e la resa crolla.
+        query: 'format:("WAVE" OR "Flac")'
+      files:
+        prefer:
+          - [Flac, WAVE, AIFF]   # il loader non legge mp3: solo lossless
