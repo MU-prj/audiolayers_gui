@@ -71,6 +71,12 @@ def create_app(*, output_dir: Path | None = None,
     out.mkdir(parents=True, exist_ok=True)
     jobs = JobManager()
     log = LogBuffer()
+    # I render condividono gli stessi file (out/score.yaml, out/render.wav)
+    # e il redirect di stdout/stderr è globale al processo: due render
+    # concorrenti si sovrascriverebbero la partitura a metà lettura. Il
+    # JobManager resta asincrono (submit/polling), ma la fase di scrittura
+    # e sintesi viene serializzata.
+    render_lock = threading.Lock()
 
     @app.get("/")
     def index():
@@ -85,7 +91,8 @@ def create_app(*, output_dir: Path | None = None,
         def runner():
             # Tutto ciò che il motore stampa (picco, seed, warning del
             # dig) finisce nel terminale della GUI.
-            with contextlib.redirect_stdout(log), contextlib.redirect_stderr(log), \
+            with render_lock, \
+                 contextlib.redirect_stdout(log), contextlib.redirect_stderr(log), \
                  _log_errors(log):
                 score_path = out / "score.yaml"
                 score_path.write_text(
