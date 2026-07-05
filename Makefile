@@ -9,7 +9,7 @@ else
     PYTHON := $(if $(wildcard .venv/bin/python),.venv/bin/python,$(if $(wildcard .venv/Scripts/python.exe),.venv/Scripts/python.exe,python3))
 endif
 
-.PHONY: tests test unit integration install gui
+.PHONY: tests test unit integration e2e install gui
 
 tests: ## Suite completa
 	$(PYTHON) -m pytest
@@ -21,6 +21,9 @@ unit: ## Solo unit test
 
 integration: ## Solo integration test
 	$(PYTHON) -m pytest tests/integration
+
+e2e: ## Solo end-to-end (server reale via subprocess)
+	$(PYTHON) -m pytest tests/e2e -m e2e
 
 install: ## Installa/aggiorna dipendenze nel venv
 	$(PYTHON) -m pip install -r requirements.txt

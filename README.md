@@ -57,12 +57,16 @@ documentata nel repo del motore
 ## Test
 
 ```bash
-make tests
-# oppure: python -m pytest
+make tests          # tutta la suite
+make unit           # score_builder, JobManager, LogBuffer in isolamento
+make integration    # le API Flask col motore vero (test client)
+make e2e            # il server reale via subprocess, HTTP sul filo
 ```
 
 I test integration usano il motore vero su partiture minuscole e un
 client Internet Archive finto (`tests/helpers.py`): girano offline.
+Gli e2e avviano `python -m audiolayers_gui` su una porta libera e
+coprono il flusso completo render → polling → download.
 
 ## Licenza
 
