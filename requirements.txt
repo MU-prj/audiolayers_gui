@@ -1,0 +1,6 @@
+audiolayers @ git+https://github.com/MU-prj/audiolayers@main
+flask>=3.0
+PyYAML>=6.0
+
+# dev
+pytest>=8.0
