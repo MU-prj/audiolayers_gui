@@ -4,6 +4,7 @@ Il runner è una strategy (callable che produce il wav): il manager non
 sa se sotto c'è un render puro o dig+render.
 """
 
+import threading
 import time
 
 from audiolayers_gui.jobs import JobManager
@@ -45,3 +46,34 @@ class TestJobManager:
 
     def test_job_sconosciuto(self):
         assert JobManager().status("boh")["state"] == "unknown"
+
+
+class TestStati:
+    def test_job_appena_avviato_e_running(self):
+        via = threading.Event()
+        manager = JobManager()
+        job_id = manager.submit(lambda: via.wait(5))
+        assert manager.status(job_id)["state"] == "running"
+        via.set()
+        assert wait_done(manager, job_id)["state"] == "done"
+
+    def test_id_univoci_anche_per_job_simultanei(self):
+        manager = JobManager()
+        ids = [manager.submit(lambda: None) for _ in range(20)]
+        assert len(set(ids)) == 20
+        for job_id in ids:
+            assert wait_done(manager, job_id)["state"] == "done"
+
+    def test_il_risultato_di_un_job_fallito_resta_vuoto(self):
+        manager = JobManager()
+        job_id = manager.submit(lambda: 1 / 0)
+        assert wait_done(manager, job_id)["state"] == "error"
+        assert manager.result(job_id) is None
+
+    def test_lo_stato_di_errore_non_contamina_gli_altri_job(self):
+        manager = JobManager()
+        rotto = manager.submit(lambda: 1 / 0)
+        sano = manager.submit(lambda: "ok")
+        assert wait_done(manager, rotto)["state"] == "error"
+        assert wait_done(manager, sano)["state"] == "done"
+        assert manager.result(sano) == "ok"
