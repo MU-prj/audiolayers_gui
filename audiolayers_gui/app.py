@@ -131,7 +131,10 @@ def create_app(*, output_dir: Path | None = None,
 
     @app.get("/api/jobs/<job_id>/audio")
     def job_audio(job_id):
-        return send_file(jobs.result(job_id), mimetype="audio/wav")
+        wav_path = jobs.result(job_id)
+        if wav_path is None:   # job sconosciuto, in corso o fallito
+            return jsonify({"error": "nessun render pronto"}), 404
+        return send_file(wav_path, mimetype="audio/wav")
 
     @app.post("/api/yaml")
     def export_yaml():
