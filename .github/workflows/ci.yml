@@ -3,13 +3,13 @@ name: CI
 # Esegue l'INTERA suite della GUI (unit + integration + e2e) a ogni push e
 # pull request, su Python 3.11 e 3.12.
 #
-# La GUI dipende dal motore `audiolayers`, che NON è (ancora) un pacchetto
-# pip: usa un layout `src/` e internamente si importa come `src.*`, mentre
-# la GUI lo importa come `audiolayers.*`. Il job clona il motore, installa
-# le sue dipendenze (numpy/soundfile/soxr/scipy/flask/PyYAML + archivedigger)
-# e riconcilia i due nomi con un symlink `audiolayers -> engine/src`, tenendo
-# la root del motore su PYTHONPATH per gli import interni `src.*`. Nessuna
-# modifica al repo del motore.
+# La GUI dipende dal motore `audiolayers`, oggi un pacchetto pip
+# installabile (pyproject nel repo del motore, che porta con sé numpy/
+# soundfile/soxr/PyYAML e archivedigger). Il job clona il motore al ref
+# ENGINE_REF e lo installa DAL CLONE, così la GUI si può testare anche
+# contro un branch del motore; le altre dipendenze arrivano dal
+# requirements.txt della GUI, saltando la riga `audiolayers @ git+...`
+# che scavalcherebbe il ref clonato.
 on:
   push:
   pull_request:
@@ -60,20 +60,14 @@ jobs:
       - name: Installa le dipendenze
         run: |
           python -m pip install --upgrade pip
-          # requirements del motore: tutte le runtime + archivedigger + pytest.
-          pip install -r "$HOME/engine/requirements.txt"
+          # Il motore dal clone al ref scelto (runtime + archivedigger
+          # dal suo pyproject); il resto dal requirements della GUI.
+          pip install "$HOME/engine"
+          grep -v "^audiolayers @" requirements.txt | pip install -r /dev/stdin
           pip install pytest-cov
-
-      - name: Shim import — «audiolayers» = engine/src
-        run: |
-          mkdir -p "$HOME/shim"
-          ln -sfn "$HOME/engine/src" "$HOME/shim/audiolayers"
 
       - name: Suite completa (unit + integration + e2e) con coverage
         run: |
-          # shim -> import `audiolayers.*`; engine root -> import interni `src.*`.
-          # Gli e2e ereditano PYTHONPATH nel subprocess del server reale.
-          export PYTHONPATH="$HOME/shim:$HOME/engine"
           python -m pytest \
             --cov=audiolayers_gui --cov-branch \
             --cov-report=term-missing --cov-report=xml
