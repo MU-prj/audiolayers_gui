@@ -43,8 +43,26 @@ function newLayer() {
   layerCounter += 1;
   const params = {};
   for (const def of ALL_LAYER_DEFS) params[def.path] = newControl(def, def.path === "duration");
+  // pool vuoto = derivato: la chiave non entra nello YAML e il motore
+  // risolve da provision.pool globale o audio/pool/<layer_id> (issue #3).
   return { layer_id: `layer${String(layerCounter).padStart(2, "0")}`,
-           pool: "audio/pool/", params };
+           pool: "", params };
+}
+
+/* Pool a 3 stati (issue #3): "" derivato | "auto" | path esplicito. */
+function poolModeOf(pool) {
+  return pool === "" ? "default" : pool === "auto" ? "auto" : "custom";
+}
+
+/* La cartella EFFETTIVA del layer: stessa logica del resolver del
+   motore (audiolayers.audio.pool.resolve_pool), per la preview. */
+function resolvedPoolOf(layer) {
+  const g = state.global["provision.pool"];
+  const base = (g?.enabled && g.value)
+    ? String(g.value).replace(/\/+$/, "") : "";
+  if (layer.pool === "auto") return `${base || "audio/pool"}/${layer.layer_id}`;
+  if (layer.pool) return layer.pool;
+  return base || `audio/pool/${layer.layer_id}`;
 }
 
 /* ---------- envelope editor ---------- */
@@ -319,6 +337,8 @@ function renderGlobals() {
       if (!state.global[def.path]) state.global[def.path] = newControl(def);
       grid.append(paramRow(def, state.global[def.path], () => 60));
     }
+    // provision.pool cambia le preview dei pool derivati nei layer.
+    grid.addEventListener("change", () => renderLayers());
     globalDig.append(tit, grid);
   }
   setColumnFlow(box);
@@ -335,9 +355,36 @@ function renderLayers() {
     const id = document.createElement("input");
     id.type = "text"; id.value = layer.layer_id;
     id.onchange = () => { layer.layer_id = id.value; };
-    const pool = document.createElement("input");
-    pool.type = "text"; pool.value = layer.pool; pool.title = "pool";
-    pool.onchange = () => { layer.pool = pool.value; };
+    const poolMode = document.createElement("select");
+    poolMode.title = "pool: derivato (default), sottocartella auto, o path a mano";
+    for (const [v, l] of [["default", "pool: derivato"], ["auto", "pool: auto"],
+                          ["custom", "pool: personalizzato"]]) {
+      const o = document.createElement("option");
+      o.value = v; o.textContent = l;
+      if (v === poolModeOf(layer.pool)) o.selected = true;
+      poolMode.append(o);
+    }
+    const poolPath = document.createElement("input");
+    poolPath.type = "text"; poolPath.placeholder = "cartella pool";
+    poolPath.hidden = poolModeOf(layer.pool) !== "custom";
+    poolPath.value = poolPath.hidden ? "" : layer.pool;
+    const poolPreview = document.createElement("span");
+    poolPreview.className = "pool-preview";
+    poolPreview.title = "cartella effettiva dei file sorgente";
+    const refreshPoolPreview = () => {
+      poolPreview.textContent = `→ ${resolvedPoolOf(layer)}`;
+    };
+    poolMode.onchange = () => {
+      layer.pool = poolMode.value === "default" ? ""
+                 : poolMode.value === "auto" ? "auto"
+                 : (poolPath.value.trim() || "audio/pool/");
+      renderLayers();
+    };
+    poolPath.onchange = () => {
+      layer.pool = poolPath.value.trim();
+      refreshPoolPreview();
+    };
+    refreshPoolPreview();
     // Modalità grano: continua (tendency) o ritmica (bpm+pattern),
     // mutuamente esclusive nel motore.
     const isRhythm = () => layer.params["fragment.rhythm.pattern"]?.enabled
@@ -375,7 +422,7 @@ function renderLayers() {
     const del = document.createElement("button");
     del.className = "danger"; del.textContent = "×";
     del.onclick = () => { state.layers.splice(idx, 1); renderLayers(); };
-    head.append(id, pool, mode, flags, del);
+    head.append(id, poolMode, poolPath, poolPreview, mode, flags, del);
     panel.append(head);
     const grid = document.createElement("div");
     grid.className = "params";
@@ -399,6 +446,9 @@ function renderLayers() {
       const digGrid = document.createElement("div");
       digGrid.className = "params";
       for (const def of PROVISION_DEFS) {
+        // La base dei pool ha senso solo nel blocco globale: sul layer
+        // la cartella si sceglie col controllo pool in testata.
+        if (def.path === "provision.pool") continue;
         if (!layer.params[def.path]) layer.params[def.path] = newControl(def);
         digGrid.append(paramRow(def, layer.params[def.path], getDur));
       }
@@ -593,7 +643,8 @@ async function doImport(file) {
     state.global[def.path] = imported.global[def.path] ?? newControl(def);
   state.layers = imported.layers.map((l) => {
     const layer = newLayer();
-    layer.layer_id = l.layer_id; layer.pool = l.pool;
+    // pool assente/vuoto resta derivato: nessun default fisso (issue #3).
+    layer.layer_id = l.layer_id; layer.pool = l.pool ?? "";
     for (const def of ALL_LAYER_DEFS)
       layer.params[def.path] = l.params[def.path] ?? newControl(def);
     for (const [path, ctl] of Object.entries(l.params))

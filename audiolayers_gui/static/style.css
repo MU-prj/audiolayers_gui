@@ -58,6 +58,10 @@ body.dark .panel { box-shadow: 2px 2px 3px rgba(0,0,0,.55),
 }
 .layer-head select { width: auto; }
 .layer-head .flags { display: inline-flex; gap: 10px; margin-left: 4px; }
+.layer-head .pool-preview { font: 11px "Courier New", monospace;
+                            color: var(--mut); white-space: nowrap;
+                            overflow: hidden; text-overflow: ellipsis;
+                            max-width: 16em; }
 
 .params { display: grid; grid-template-columns: repeat(auto-fill, minmax(265px, 1fr));
           gap: 1px 16px; }
