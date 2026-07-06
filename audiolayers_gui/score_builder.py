@@ -15,10 +15,11 @@ def build_score(state: dict) -> dict:
             _set_nested(score, name, control["value"])  # anche provision.*
     score["layers"] = []
     for layer_state in state.get("layers", []):
-        layer = {
-            "layer_id": layer_state["layer_id"],
-            "pool": layer_state["pool"],
-        }
+        layer = {"layer_id": layer_state["layer_id"]}
+        # Pool a 3 stati (issue #3): vuoto = derivato dal motore (la
+        # chiave NON si emette), "auto" o path espliciti passano.
+        if layer_state.get("pool"):
+            layer["pool"] = layer_state["pool"]
         for path, control in layer_state.get("params", {}).items():
             if control.get("enabled"):
                 _set_nested(layer, path, control["value"])
@@ -40,7 +41,9 @@ def parse_score(score: dict) -> dict:
     for layer in score.get("layers", []):
         layer_state = {
             "layer_id": layer.get("layer_id", "layer"),
-            "pool": layer.get("pool", "audio/pool/"),
+            # Assente = derivato dal motore: niente default fisso, o la
+            # derivazione si perderebbe al prossimo build (issue #3).
+            "pool": layer.get("pool", ""),
             "params": {},
         }
         for path, value in _walk(layer):
