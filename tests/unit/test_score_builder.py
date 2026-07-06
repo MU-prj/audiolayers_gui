@@ -69,6 +69,33 @@ class TestProvision:
         assert params["provision.search.license"]["value"] == "cc"
 
 
+class TestPoolDinamico:
+    """audiolayers_gui#3: il campo pool ha 3 stati — vuoto (derivato,
+    non emesso), 'auto' (sentinella), path esplicito."""
+
+    def test_pool_vuoto_non_entra_nella_partitura(self):
+        stato = stato_minimo()
+        stato["layers"][0]["pool"] = ""
+        assert "pool" not in build_score(stato)["layers"][0]
+
+    def test_pool_auto_passa_come_sentinella(self):
+        stato = stato_minimo()
+        stato["layers"][0]["pool"] = "auto"
+        assert build_score(stato)["layers"][0]["pool"] == "auto"
+
+    def test_parse_senza_pool_resta_derivato(self):
+        """Niente default fisso: rimpiazzare il pool assente con
+        audio/pool/ perderebbe la derivazione lato motore."""
+        stato = parse_score({"layers": [{"layer_id": "a", "duration": 3.0}]})
+        assert stato["layers"][0]["pool"] == ""
+
+    def test_round_trip_senza_pool_e_stabile(self):
+        stato = stato_minimo()
+        stato["layers"][0]["pool"] = ""
+        score = build_score(stato)
+        assert build_score(parse_score(score)) == score
+
+
 class TestModalita:
     def test_rhythm_solo_e_time_mode_passano(self):
         stato = stato_minimo()
@@ -136,7 +163,7 @@ class TestCasiLimite:
         stato = parse_score({"layers": [{"duration": 3.0}]})
         layer = stato["layers"][0]
         assert layer["layer_id"] == "layer"
-        assert layer["pool"] == "audio/pool/"
+        assert layer["pool"] == ""   # derivato: nessun default fisso (issue #3)
         assert layer["params"]["duration"] == {"enabled": True, "value": 3.0}
 
     def test_percorso_a_tre_livelli_annida_e_torna(self):
