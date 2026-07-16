@@ -197,6 +197,52 @@ function openPointEditor(ev, def, control, index, dur, apply) {
   it.focus(); it.select();
 }
 
+/* ---------- pattern ritmico: sintassi compatta (issue #10) ----------
+   Una voce può ripetersi un numero casuale di volte (seedato nel
+   motore): "0.125x3" fisso, "0.125x2-4" range, "0.125x[2,7]" scelte.
+   In YAML diventa {value, repeat}; gli scalari restano numeri puri. */
+function voiceToText(v) {
+  if (typeof v !== "object" || v === null) return String(v);
+  const rep = Array.isArray(v.repeat) ? `[${v.repeat.join(",")}]` : v.repeat;
+  return `${v.value}x${rep}`;
+}
+
+function splitVoices(text) {
+  // split sulle virgole fuori dalle parentesi: "0.5x[2,7]" è UNA voce
+  const out = []; let depth = 0, cur = "";
+  for (const ch of text) {
+    if (ch === "[") depth++;
+    else if (ch === "]") depth = Math.max(0, depth - 1);
+    if (ch === "," && depth === 0) { out.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out.map(s => s.trim()).filter(Boolean);
+}
+
+function parseVoice(token) {
+  const m = token.match(/^([0-9.]+)\s*x\s*(.+)$/i);
+  if (!m) {
+    const n = parseFloat(token);
+    return !isNaN(n) && n > 0 ? n : null;
+  }
+  const value = parseFloat(m[1]);
+  if (isNaN(value) || value <= 0) return null;
+  const spec = m[2].trim();
+  if (/^\[[^\]]*\]$/.test(spec)) {          // lista di scelte [2,7]
+    const choices = spec.slice(1, -1).split(",")
+      .map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n >= 1);
+    return choices.length ? { value, repeat: choices } : null;
+  }
+  if (/^\d+\s*-\s*\d+$/.test(spec)) {        // range "2-4" (stringa YAML)
+    const [lo, hi] = spec.split("-").map(s => parseInt(s, 10));
+    return lo >= 1 && lo <= hi
+      ? { value, repeat: spec.replace(/\s+/g, "") } : null;
+  }
+  const n = parseInt(spec, 10);              // intero fisso
+  return !isNaN(n) && n >= 1 && /^\d+$/.test(spec) ? { value, repeat: n } : null;
+}
+
 /* ---------- righe parametro ---------- */
 function paramRow(def, control, getDur) {
   const row = document.createElement("div");
@@ -242,11 +288,11 @@ function paramRow(def, control, getDur) {
     } else if (def.kind === "numlist") {
       const txt = document.createElement("input");
       txt.type = "text";
-      txt.value = (control.value || []).join(", ");
-      txt.placeholder = "es. 0.25, 0.125, 0.125";
+      txt.value = (control.value || []).map(voiceToText).join(", ");
+      txt.placeholder = "es. 0.25, 0.125x2-4, 0.5x[2,7]";
       txt.onchange = () => {
-        control.value = txt.value.split(",").map(s => parseFloat(s.trim()))
-                                 .filter(n => !isNaN(n) && n > 0);
+        control.value = splitVoices(txt.value).map(parseVoice)
+                                              .filter(v => v !== null);
       };
       slot.append(txt);
     } else if (def.kind === "text" || def.kind === "list" || def.kind === "listlist") {

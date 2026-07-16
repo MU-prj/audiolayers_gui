@@ -71,6 +71,47 @@ class TestWebApi:
                                content_type="text/yaml").get_json()
         assert imported["layers"][0]["params"]["fragment.duration"]["value"] == 0.25
 
+    def test_render_con_pattern_repeat_casuale(self, tmp_path):
+        """Issue #10: una voce dict {value, repeat} nel pattern ritmico
+        attraversa GUI → YAML → motore e il render va a buon fine."""
+        pool = tmp_path / "pool"
+        pool.mkdir()
+        write_wav(pool / "a.wav", 1.0)
+        app = create_app(output_dir=tmp_path / "out")
+        client = app.test_client()
+
+        state = make_state(pool)
+        params = state["layers"][0]["params"]
+        del params["fragment.duration"]
+        params["fragment.rhythm.bpm"] = {"enabled": True, "value": 240}
+        params["fragment.rhythm.pattern"] = {
+            "enabled": True,
+            "value": [0.25, {"value": 0.125, "repeat": "2-4"}],
+        }
+        job_id = client.post("/api/render",
+                             json={"state": state}).get_json()["job_id"]
+        assert wait_done(client, job_id)["state"] == "done"
+
+    def test_yaml_round_trip_pattern_repeat(self, tmp_path):
+        """Le voci dict del pattern sopravvivono a export e import:
+        la lista resta una foglia unica, niente appiattimento."""
+        app = create_app(output_dir=tmp_path / "out")
+        client = app.test_client()
+        state = make_state(tmp_path / "pool")
+        state["layers"][0]["params"]["fragment.rhythm.pattern"] = {
+            "enabled": True,
+            "value": [0.5, {"value": 0.125, "repeat": [2, 7]}],
+        }
+
+        exported = client.post("/api/yaml", json={"state": state}).data.decode()
+        pattern = yaml.safe_load(exported)["layers"][0]["fragment"]["rhythm"]["pattern"]
+        assert pattern == [0.5, {"value": 0.125, "repeat": [2, 7]}]
+
+        imported = client.post("/api/import", data=exported,
+                               content_type="text/yaml").get_json()
+        voices = imported["layers"][0]["params"]["fragment.rhythm.pattern"]["value"]
+        assert voices == [0.5, {"value": 0.125, "repeat": [2, 7]}]
+
     def test_terminale_espone_l_output_del_motore(self, tmp_path):
         """Il render stampa picco/seed: le righe finiscono nel log della
         GUI, leggibili a incrementi con ?since=."""
